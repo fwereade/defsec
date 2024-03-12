@@ -154,39 +154,13 @@ func (e *evaluator) EvaluateAll(ctx context.Context) (terraform.Modules, map[str
 	parseDuration += time.Since(start)
 
 	e.debug.Log("Starting submodule evaluation...")
-	var modules terraform.Modules
-	for _, definition := range e.loadModules(ctx) {
-		submodules, outputs, err := definition.Parser.EvaluateAll(ctx)
-		if err != nil {
-			e.debug.Log("Failed to evaluate submodule '%s': %s.", definition.Name, err)
-			continue
-		}
-		// export module outputs
-		e.ctx.Set(outputs, "module", definition.Name)
-		modules = append(modules, submodules...)
+	definitions := e.loadModules(ctx)
+	for _, definition := range definitions {
 		for key, val := range definition.Parser.GetFilesystemMap() {
 			fsMap[key] = val
 		}
 	}
-	e.debug.Log("Finished processing %d submodule(s).", len(modules))
-
-	e.debug.Log("Starting post-submodule evaluation...")
-	for i := 0; i < maxContextIterations; i++ {
-
-		e.evaluateStep()
-
-		// if ctx matches the last evaluation, we can bail, nothing left to resolve
-		if i > 0 && reflect.DeepEqual(lastContext.Variables, e.ctx.Inner().Variables) {
-			break
-		}
-
-		if len(e.ctx.Inner().Variables) != len(lastContext.Variables) {
-			lastContext.Variables = make(map[string]cty.Value, len(e.ctx.Inner().Variables))
-		}
-		for k, v := range e.ctx.Inner().Variables {
-			lastContext.Variables[k] = v
-		}
-	}
+	modules := e.evaluateSubmodules(ctx, definitions)
 
 	e.debug.Log("Module evaluation complete.")
 	parseDuration += time.Since(start)
@@ -196,6 +170,72 @@ func (e *evaluator) EvaluateAll(ctx context.Context) (terraform.Modules, map[str
 		m.SetParent(rootModule)
 	}
 	return append(terraform.Modules{rootModule}, modules...), fsMap, parseDuration
+}
+
+func (e *evaluator) evaluateSubmodules(ctx context.Context, definitions []*ModuleDefinition) terraform.Modules {
+	if len(definitions) == 0 {
+		return nil
+	}
+
+	var modules terraform.Modules
+	for i := 0; i < maxContextIterations; i++ {
+		// Put the definitions we have the best chance of resolving correctly
+		// at the head of the list. This is just a heuristic, but it seems to
+		// work ok in practice; determining which submodules might have inputs
+		// knowably-dependent on other submodules was beyond me.
+		sortResolvable(definitions)
+		resolved := 0
+
+		// Evaluate all completely-resolvable submodules, or just the one best-
+		// guess most-resolvable one…
+		for i, md := range definitions {
+			resolvability := md.Resolvability()
+			if i == 0 || resolvability == 1.0 {
+				submodules := e.evaluateSubmodule(ctx, md)
+				modules = append(modules, submodules...)
+				resolved += 1
+			} else {
+				break
+			}
+		}
+
+		// …then start again if any module definitions remain unresolved.
+		definitions = definitions[resolved:]
+		if len(definitions) == 0 {
+			break
+		}
+	}
+	return modules
+}
+
+func (e *evaluator) evaluateSubmodule(ctx context.Context, md *ModuleDefinition) terraform.Modules {
+	e.debug.Log("Evaluating submodule %s", md.Name)
+	submodules, outputs, err := md.Parser.EvaluateAll(ctx)
+	if err != nil {
+		e.debug.Log("Failed to evaluate submodule '%s': %s.", md.Name, err)
+		return nil
+	}
+	// export module outputs
+	e.ctx.Set(outputs, "module", md.Name)
+
+	e.debug.Log("Starting post-submodule %s evaluation...", md.Name)
+	var lastContext hcl.EvalContext
+	for i := 0; i < maxContextIterations; i++ {
+		if len(e.ctx.Inner().Variables) != len(lastContext.Variables) {
+			lastContext.Variables = make(map[string]cty.Value, len(e.ctx.Inner().Variables))
+		}
+		for k, v := range e.ctx.Inner().Variables {
+			lastContext.Variables[k] = v
+		}
+
+		e.evaluateStep()
+
+		if reflect.DeepEqual(lastContext.Variables, e.ctx.Inner().Variables) {
+			e.debug.Log("Post-submodule evaluation quiesced at i=%d", i)
+			break
+		}
+	}
+	return submodules
 }
 
 func (e *evaluator) expandBlocks(blocks terraform.Blocks) terraform.Blocks {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/aquasecurity/defsec/pkg/scanners/terraform/parser/resolvers"
@@ -28,6 +29,44 @@ type ModuleDefinition struct {
 	Definition *terraform.Block
 	Parser     *Parser
 	External   bool
+}
+
+func (md *ModuleDefinition) Resolvability() float32 {
+	attrs := md.Definition.Attributes()
+	if len(attrs) == 0 {
+		return 1
+	}
+	resolvable := 0
+	for _, attr := range attrs {
+		if attr.IsResolvable() {
+			resolvable += 1
+		}
+	}
+	return float32(resolvable / len(attrs))
+}
+
+type keyedMD struct {
+	// decorate-sort-undecorate for ModuleDefinition
+	md  *ModuleDefinition
+	key float32
+}
+
+// sortResolvable orders mds such that those "most likely" to be resolvable
+// lie at the head of the list. It's *probably* working around a problem in
+// sortBlocksByHierarchy and/or the order of evaluations in the evaluator
+// type – i.e., if sBBH works right *and* evaluator handles them in order,
+// rather than by type, it probably won't be needed at all.
+func sortResolvable(mds []*ModuleDefinition) {
+	kmds := make([]keyedMD, len(mds))
+	for i, md := range mds {
+		kmds[i] = keyedMD{md, md.Resolvability()}
+	}
+	sort.SliceStable(kmds, func(i, j int) bool {
+		return kmds[i].key > kmds[j].key
+	})
+	for i, kmd := range kmds {
+		mds[i] = kmd.md
+	}
 }
 
 // LoadModules reads all module blocks and loads the underlying modules, adding blocks to e.moduleBlocks
