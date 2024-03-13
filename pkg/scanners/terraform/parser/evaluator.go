@@ -54,12 +54,15 @@ func newEvaluator(
 	ignores []terraform.Ignore,
 	logger debug.Logger,
 	allowDownloads bool,
+
+	moduleVariables cty.Value,
 ) *evaluator {
 
 	// create a context to store variables and make functions available
 	ctx := tfcontext.NewContext(&hcl.EvalContext{
 		Functions: Functions(target, modulePath),
 	}, nil)
+	ctx.Set(moduleVariables, "module")
 
 	// these variables are made available by terraform to each module
 	ctx.SetByDot(cty.StringVal(workspace), "terraform.workspace")
@@ -156,6 +159,7 @@ func (e *evaluator) EvaluateAll(ctx context.Context) (terraform.Modules, map[str
 	e.debug.Log("Starting submodule evaluation...")
 	var modules terraform.Modules
 	for _, definition := range e.loadModules(ctx) {
+		definition.Parser.moduleVariables = e.ctx.Get("module")
 		submodules, outputs, err := definition.Parser.EvaluateAll(ctx)
 		if err != nil {
 			e.debug.Log("Failed to evaluate submodule '%s': %s.", definition.Name, err)
