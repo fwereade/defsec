@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/aquasecurity/defsec/pkg/scanners/options"
+	"github.com/aquasecurity/defsec/pkg/terraform"
 
 	"github.com/aquasecurity/defsec/test/testutil"
 
@@ -923,4 +924,53 @@ policy_rules = {
 	assert.Equal(t, true, block.GetAttribute("enabled").AsBoolValueOrDefault(false, block).Value())
 	assert.Equal(t, "host() != 'google.com'", block.GetAttribute("session_matcher").AsStringValueOrDefault("", block).Value())
 	assert.Equal(t, 1001, block.GetAttribute("priority").AsIntValueOrDefault(0, block).Value())
+}
+func TestXxx(t *testing.T) {
+	files := map[string]string{
+		"main.tf": `
+module "module1" {
+	source = "./modules/module1"
+}
+module "module2" {
+	source = "./modules/module2"
+	test_var = module.module1.test_out
+}
+`,
+		"modules/module1/main.tf": `
+output "test_out" {
+	value = "test_value"
+}
+`,
+		"modules/module2/main.tf": `
+variable "test_var" {}
+resource "test_resource" "this" {
+	dynamic "dynamic_block" {
+		for_each = [var.test_var]
+		content {
+			some_attr = dynamic_block.value
+		}
+	}
+}
+`,
+	}
+
+	modules := parse(t, files)
+	require.Len(t, modules, 3)
+
+	resources := modules.GetResourcesByType("test_resource")
+	require.Len(t, resources, 1)
+
+	attr, _ := resources[0].GetNestedAttribute("dynamic_block.some_attr")
+	require.NotNil(t, attr)
+
+	assert.Equal(t, "test_value", attr.GetRawValue())
+}
+
+func parse(t *testing.T, files map[string]string) terraform.Modules {
+	fs := testutil.CreateFS(t, files)
+	parser := New(fs, "", OptionStopOnHCLError(true))
+	require.NoError(t, parser.ParseFS(context.TODO(), "."))
+	modules, _, err := parser.EvaluateAll(context.TODO())
+	require.NoError(t, err)
+	return modules
 }
