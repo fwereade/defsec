@@ -278,6 +278,86 @@ output "mod_result" {
 	assert.Equal(t, "ok", childValAttr.Value().AsString())
 }
 
+func Test_ModuleInputOutput(t *testing.T) {
+
+	fs := testutil.CreateFS(t, map[string]string{
+		"main.tf": `
+module "src" {
+	source = "./src"
+}
+
+resource "passthru" "root" {
+	value = module.src.src_result
+}
+
+module "dst" {
+source = "./dst"
+	// XXX doesn't work via resource in this module :/
+	input = passthru.root.value
+	// input  = module.src.src_result
+}
+output "result" {
+	value = module.dst.dst_result
+}
+	`,
+		"src/src.tf": `
+output "src_result" {
+	value = "ok"
+}
+	`,
+		"dst/dst.tf": `
+variable "input" {
+	default = "?"
+}
+resource "passthru" "handover" {
+	value = var.input
+}
+output "dst_result" {
+	value = passthru.handover.value
+}
+	`,
+	})
+
+	parser := New(fs, "", OptionStopOnHCLError(true), options.ParserWithDebug(os.Stderr))
+	if err := parser.ParseFS(context.TODO(), "."); err != nil {
+		t.Fatal(err)
+	}
+	modules, _, err := parser.EvaluateAll(context.TODO())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Len(t, modules, 3)
+	rootModule := modules[0]
+	dstModule := modules[1]
+
+	rootResources := rootModule.GetBlocks().OfType("resource")
+	for _, res := range rootResources {
+		t.Logf("resource %s", res.FullName())
+		for k, v := range res.Attributes() {
+			t.Logf("%s %s", k, v.Value().GoString())
+		}
+	}
+
+	dstOutputs := dstModule.GetBlocks().OfType("output")
+	require.Len(t, dstOutputs, 1)
+	assert.Equal(t, "module.dst.output.dst_result", dstOutputs[0].FullName())
+	dstValAttr := dstOutputs[0].GetAttribute("value")
+	require.NotNil(t, dstValAttr)
+	require.Equal(t, cty.String, dstValAttr.Type())
+	assert.Equal(t, "ok", dstValAttr.Value().AsString())
+
+	rootOutputs := rootModule.GetBlocks().OfType("output")
+	require.Len(t, rootOutputs, 1)
+	assert.Equal(t, "output.result", rootOutputs[0].FullName())
+	valAttr := rootOutputs[0].GetAttribute("value")
+	require.NotNil(t, valAttr)
+	require.Equal(t, cty.String, valAttr.Type())
+	assert.Equal(t, "ok", valAttr.Value().AsString())
+
+	t.Fatal()
+}
+
 func Test_UndefinedModuleOutputReference(t *testing.T) {
 
 	fs := testutil.CreateFS(t, map[string]string{
@@ -606,7 +686,7 @@ module "registry" {
 `,
 	})
 
-	parser := New(fs, "", OptionStopOnHCLError(true))
+	parser := New(fs, "", OptionStopOnHCLError(true), OptionWithDownloads(true), options.ParserWithDebug(os.Stderr))
 	if err := parser.ParseFS(context.TODO(), "code"); err != nil {
 		t.Fatal(err)
 	}
@@ -625,7 +705,7 @@ module "registry" {
 `,
 	})
 
-	parser := New(fs, "", OptionStopOnHCLError(true))
+	parser := New(fs, "", OptionStopOnHCLError(true), OptionWithDownloads(true), options.ParserWithDebug(os.Stderr))
 	if err := parser.ParseFS(context.TODO(), "code"); err != nil {
 		t.Fatal(err)
 	}
