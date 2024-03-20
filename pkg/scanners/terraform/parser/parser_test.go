@@ -329,14 +329,6 @@ output "dst_result" {
 	rootModule := modules[0]
 	dstModule := modules[1]
 
-	rootResources := rootModule.GetBlocks().OfType("resource")
-	for _, res := range rootResources {
-		t.Logf("resource %s", res.FullName())
-		for k, v := range res.Attributes() {
-			t.Logf("%s %s", k, v.Value().GoString())
-		}
-	}
-
 	dstOutputs := dstModule.GetBlocks().OfType("output")
 	require.Len(t, dstOutputs, 1)
 	assert.Equal(t, "module.dst.output.dst_result", dstOutputs[0].FullName())
