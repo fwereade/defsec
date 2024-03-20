@@ -290,10 +290,13 @@ module "src" {
 	source = "./src"
 }
 
+resource "passthru" "root" {
+	value = module.src.src_result
+}
+
 module "dst" {
 source = "./dst"
-	// XXX doesn't work via resource in this module :/
-	input  = module.src.src_result
+	input = passthru.root.value
 }
 
 output "result" {
