@@ -292,9 +292,7 @@ resource "passthru" "root" {
 
 module "dst" {
 source = "./dst"
-	// XXX doesn't work via resource in this module :/
 	input = passthru.root.value
-	// input  = module.src.src_result
 }
 output "result" {
 	value = module.dst.dst_result
@@ -684,7 +682,7 @@ module "registry" {
 `,
 	})
 
-	parser := New(fs, "", OptionStopOnHCLError(true), OptionWithDownloads(true), options.ParserWithDebug(os.Stderr))
+	parser := New(fs, "", OptionStopOnHCLError(true))
 	if err := parser.ParseFS(context.TODO(), "code"); err != nil {
 		t.Fatal(err)
 	}
@@ -703,7 +701,7 @@ module "registry" {
 `,
 	})
 
-	parser := New(fs, "", OptionStopOnHCLError(true), OptionWithDownloads(true), options.ParserWithDebug(os.Stderr))
+	parser := New(fs, "", OptionStopOnHCLError(true))
 	if err := parser.ParseFS(context.TODO(), "code"); err != nil {
 		t.Fatal(err)
 	}

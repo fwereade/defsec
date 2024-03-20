@@ -112,16 +112,12 @@ func Test_ContextSetThenGetMergeObjects(t *testing.T) {
 	ctx := NewContext(underlying, nil)
 
 	ctx.Set(cty.ObjectVal(map[string]cty.Value{
-		"bar": cty.ObjectVal(map[string]cty.Value{"ping": cty.NilVal}),
+		"bar": cty.ObjectVal(map[string]cty.Value{"baz": cty.StringVal("qux"), "ping": cty.NilVal}),
 	}), "foo")
 	ctx.Set(cty.ObjectVal(map[string]cty.Value{
 		"bar": cty.ObjectVal(map[string]cty.Value{"ping": cty.StringVal("pong")}),
 	}), "foo")
 
-	t.Log(ctx.Get("foo").GoString())
-	t.Log(ctx.Get("foo", "bar").GoString())
-	t.Log(ctx.Get("foo", "bar", "ping").GoString())
-
-	val := ctx.Get("foo", "bar", "ping")
-	assert.Equal(t, "pong", val.AsString())
+	assert.Equal(t, "qux", ctx.Get("foo", "bar", "baz").AsString())
+	assert.Equal(t, "pong", ctx.Get("foo", "bar", "ping").AsString())
 }

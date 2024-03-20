@@ -136,8 +136,6 @@ func (e *evaluator) EvaluateAll(ctx context.Context) (terraform.Modules, map[str
 	e.blocks = e.expandBlocks(e.blocks)
 	e.blocks = e.expandBlocks(e.blocks)
 
-	// parseDuration += time.Since(start)
-
 	e.debug.Log("Starting submodule evaluation...")
 	var smis []*submoduleInfo
 	for _, md := range e.loadModules(ctx) {
@@ -193,9 +191,10 @@ func (e *evaluator) evaluateSteps() {
 }
 
 type submoduleInfo struct {
-	definition *ModuleDefinition
-	lastInputs map[string]cty.Value
-	modules    terraform.Modules
+	definition  *ModuleDefinition
+	lastInputs  map[string]cty.Value
+	lastOutputs cty.Value
+	modules     terraform.Modules
 }
 
 func (e *evaluator) evaluateSubmodule(ctx context.Context, smi *submoduleInfo) bool {
@@ -205,13 +204,13 @@ func (e *evaluator) evaluateSubmodule(ctx context.Context, smi *submoduleInfo) b
 		e.debug.Log("Failed to determine inputs for submodule %s", smi.definition.Name)
 		return false
 	}
-	// inputs := cty.ObjectVal(inputsMap)
 	if len(smi.modules) > 0 {
 		if reflect.DeepEqual(inputs, smi.lastInputs) {
 			e.debug.Log("No need to re-evaluate submodule %s", smi.definition.Name)
 			return false
 		}
 	}
+	smi.lastInputs = inputs
 
 	e.debug.Log("Evaluating submodule %s", smi.definition.Name)
 	submodules, outputs, err := smi.definition.Parser.EvaluateAll(ctx)
@@ -219,13 +218,20 @@ func (e *evaluator) evaluateSubmodule(ctx context.Context, smi *submoduleInfo) b
 		e.debug.Log("Failed to evaluate submodule '%s': %s.", smi.definition.Name, err)
 		return false
 	}
-	// export module outputs
-	e.ctx.Set(outputs, "module", smi.definition.Name)
 	smi.modules = submodules
 
-	smi.lastInputs = inputs
-
+	// export module outputs
+	e.ctx.Set(outputs, "module", smi.definition.Name)
 	e.debug.Log("Submodule %s complete", smi.definition.Name)
+
+	lastOutputs := smi.lastOutputs
+	smi.lastOutputs = outputs
+	if reflect.DeepEqual(outputs, lastOutputs) {
+		e.debug.Log("Submodule %s outputs unchanged", smi.definition.Name)
+		return false
+	}
+
+	e.debug.Log("Submodule %s outputs changed", smi.definition.Name)
 	e.evaluateSteps()
 	return true
 }
