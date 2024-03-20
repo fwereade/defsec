@@ -106,3 +106,22 @@ func Test_ContextSetThenImmediateGetWithChild(t *testing.T) {
 	val := ctx.Get("module", "modulename", "mod_result")
 	assert.Equal(t, "ok", val.AsString())
 }
+
+func Test_ContextSetThenGetMergeObjects(t *testing.T) {
+	underlying := &hcl.EvalContext{}
+	ctx := NewContext(underlying, nil)
+
+	ctx.Set(cty.ObjectVal(map[string]cty.Value{
+		"bar": cty.ObjectVal(map[string]cty.Value{"ping": cty.NilVal}),
+	}), "foo")
+	ctx.Set(cty.ObjectVal(map[string]cty.Value{
+		"bar": cty.ObjectVal(map[string]cty.Value{"ping": cty.StringVal("pong")}),
+	}), "foo")
+
+	t.Log(ctx.Get("foo").GoString())
+	t.Log(ctx.Get("foo", "bar").GoString())
+	t.Log(ctx.Get("foo", "bar", "ping").GoString())
+
+	val := ctx.Get("foo", "bar", "ping")
+	assert.Equal(t, "pong", val.AsString())
+}

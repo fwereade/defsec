@@ -250,9 +250,6 @@ func (p *Parser) GetInputVars() (map[string]cty.Value, error) {
 	if p.moduleBlock != nil {
 		inputVars := p.moduleBlock.Values().AsValueMap()
 		p.debug.Log("Added %d input variables from module definition.", len(inputVars))
-		for k, v := range inputVars {
-			p.debug.Log(">>> %s %s", k, v.GoString())
-		}
 		return inputVars, nil
 	}
 	inputVars, err := loadTFVars(p.moduleFS, p.tfvarsPaths)

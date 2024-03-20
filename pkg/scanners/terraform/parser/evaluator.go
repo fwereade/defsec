@@ -19,7 +19,6 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/gocty"
-	"github.com/zclconf/go-cty/cty/json"
 )
 
 const (
@@ -102,6 +101,7 @@ func (e *evaluator) evaluateStep() {
 
 	e.ctx.Set(e.getValuesByBlockType("data"), "data")
 	e.ctx.Set(e.getValuesByBlockType("output"), "output")
+	e.ctx.Set(e.getValuesByBlockType("module"), "module")
 }
 
 // exportOutputs is used to export module outputs to the parent module
@@ -228,19 +228,6 @@ func (e *evaluator) evaluateSubmodule(ctx context.Context, smi *submoduleInfo) b
 	e.debug.Log("Submodule %s complete", smi.definition.Name)
 	e.evaluateSteps()
 	return true
-}
-
-func deepCopyObject(v cty.Value) cty.Value {
-	buf, err := json.SimpleJSONValue{Value: v}.MarshalJSON()
-	if err != nil {
-		panic(err)
-	}
-	var w json.SimpleJSONValue
-	err = w.UnmarshalJSON(buf)
-	if err != nil {
-		panic(err)
-	}
-	return w.Value
 }
 
 func (e *evaluator) expandBlocks(blocks terraform.Blocks) terraform.Blocks {
@@ -461,7 +448,6 @@ func (e *evaluator) getValuesByBlockType(blockType string) cty.Value {
 				continue
 			}
 			values[b.Label()] = val
-			e.debug.Log("%s %s %s", b.Type(), b.Label(), val.GoString())
 		case "output":
 			val, err := e.evaluateOutput(b)
 			if err != nil {
@@ -477,7 +463,6 @@ func (e *evaluator) getValuesByBlockType(blockType string) cty.Value {
 				continue
 			}
 			values[b.Label()] = b.Values()
-			e.debug.Log("%s %s %s", b.Type(), b.Label(), b.Values().GoString())
 		case "resource", "data":
 			if len(b.Labels()) < 2 {
 				continue
@@ -496,7 +481,6 @@ func (e *evaluator) getValuesByBlockType(blockType string) cty.Value {
 
 			valueMap[b.Labels()[1]] = b.Values()
 			values[b.Labels()[0]] = cty.ObjectVal(valueMap)
-			e.debug.Log("%s %s %s", b.Type(), b.Label(), b.Values().GoString())
 		}
 	}
 

@@ -354,8 +354,6 @@ output "dst_result" {
 	require.NotNil(t, valAttr)
 	require.Equal(t, cty.String, valAttr.Type())
 	assert.Equal(t, "ok", valAttr.Value().AsString())
-
-	t.Fatal()
 }
 
 func Test_UndefinedModuleOutputReference(t *testing.T) {
